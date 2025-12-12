@@ -1,0 +1,1414 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>移动端K线图工具 - 始终显示十字线</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            -webkit-tap-highlight-color: transparent;
+        }
+        
+        body {
+            font-family: 'PingFang SC', 'Helvetica Neue', Arial, sans-serif;
+            background-color: #121826;
+            color: #e0e0e0;
+            height: 100vh;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        /* 工具条样式 */
+        .toolbar {
+            background-color: #1e2536;
+            height: 56px;
+            display: flex;
+            align-items: center;
+            padding: 0 16px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
+            z-index: 10;
+            flex-shrink: 0;
+        }
+        
+        .toolbar-title {
+            font-size: 1.2rem;
+            font-weight: 600;
+            color: #6ab7ff;
+            margin-right: auto;
+        }
+        
+        .toolbar-button {
+            background: linear-gradient(135deg, #3a7bd5, #00d2ff);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            padding: 10px 16px;
+            font-size: 0.9rem;
+            font-weight: 600;
+            cursor: pointer;
+            margin-left: 12px;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+            transition: all 0.2s ease;
+            min-width: 80px;
+            text-align: center;
+        }
+        
+        .toolbar-button:active {
+            transform: translateY(2px);
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+        }
+        
+        /* 主画布区域 */
+        .canvas-container {
+            flex: 1;
+            position: relative;
+            overflow: hidden;
+            background-color: #0a0e17;
+            border-top: 1px solid #2a3348;
+            border-bottom: 1px solid #2a3348;
+        }
+        
+        #klineCanvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+            touch-action: none;
+            cursor: crosshair;
+        }
+        
+        /* 悬停十字线 */
+        .crosshair {
+            position: absolute;
+            pointer-events: none;
+            z-index: 5;
+            display: none;
+        }
+        
+        .crosshair-line {
+            position: absolute;
+            background-color: rgba(106, 183, 255, 0.6);
+        }
+        
+        .crosshair-line.horizontal {
+            width: 100%;
+            height: 1px;
+            top: 0;
+            left: 0;
+        }
+        
+        .crosshair-line.vertical {
+            width: 1px;
+            height: 100%;
+            top: 0;
+            left: 0;
+        }
+        
+        /* 价格标签 */
+        .price-label {
+            position: absolute;
+            background-color: rgba(30, 37, 54, 0.9);
+            color: #6ab7ff;
+            font-size: 0.9rem;
+            font-weight: 600;
+            padding: 4px 8px;
+            border-radius: 4px;
+            pointer-events: none;
+            z-index: 6;
+            white-space: nowrap;
+            border: 1px solid rgba(106, 183, 255, 0.5);
+            display: none;
+        }
+        
+        /* 时间标签 */
+        .time-label {
+            position: absolute;
+            background-color: rgba(30, 37, 54, 0.9);
+            color: #6ab7ff;
+            font-size: 0.9rem;
+            font-weight: 600;
+            padding: 4px 8px;
+            border-radius: 4px;
+            pointer-events: none;
+            z-index: 6;
+            white-space: nowrap;
+            border: 1px solid rgba(106, 183, 255, 0.5);
+            display: none;
+        }
+        
+        /* 悬停提示框 */
+        .hover-tooltip {
+            position: absolute;
+            background-color: rgba(30, 37, 54, 0.95);
+            border: 1px solid #3a7bd5;
+            border-radius: 8px;
+            padding: 12px 16px;
+            font-size: 0.85rem;
+            color: #e0e0e0;
+            z-index: 10;
+            min-width: 200px;
+            box-shadow: 0 6px 16px rgba(0, 0, 0, 0.4);
+            display: none;
+            backdrop-filter: blur(5px);
+        }
+        
+        .hover-tooltip-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+            padding-bottom: 8px;
+            border-bottom: 1px solid #2a3348;
+        }
+        
+        .hover-tooltip-title {
+            font-weight: 700;
+            color: #6ab7ff;
+            font-size: 1rem;
+        }
+        
+        .hover-tooltip-trend {
+            padding: 3px 8px;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            font-weight: 600;
+        }
+        
+        .trend-up {
+            background-color: rgba(0, 200, 83, 0.2);
+            color: #00c853;
+        }
+        
+        .trend-down {
+            background-color: rgba(255, 61, 0, 0.2);
+            color: #ff3d00;
+        }
+        
+        .trend-neutral {
+            background-color: rgba(138, 155, 178, 0.2);
+            color: #8a9bb2;
+        }
+        
+        .hover-tooltip-body {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 8px;
+        }
+        
+        .tooltip-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 4px 0;
+        }
+        
+        .tooltip-label {
+            color: #8a9bb2;
+        }
+        
+        .tooltip-value {
+            font-weight: 600;
+        }
+        
+        /* 画布上的坐标指示器 */
+        .coordinate-display {
+            position: absolute;
+            top: 16px;
+            left: 16px;
+            background-color: rgba(30, 37, 54, 0.9);
+            border: 1px solid #3a7bd5;
+            border-radius: 8px;
+            padding: 10px 14px;
+            font-size: 0.85rem;
+            color: #e0e0e0;
+            z-index: 5;
+            min-width: 160px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+            display: none;
+        }
+        
+        .coordinate-row {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 4px;
+        }
+        
+        .coordinate-row:last-child {
+            margin-bottom: 0;
+        }
+        
+        .coordinate-label {
+            color: #8a9bb2;
+        }
+        
+        .coordinate-value {
+            font-weight: 600;
+            color: #6ab7ff;
+        }
+        
+        /* 底部状态栏 */
+        .status-bar {
+            background-color: #1e2536;
+            height: 48px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 16px;
+            font-size: 0.85rem;
+            flex-shrink: 0;
+            border-top: 1px solid #2a3348;
+        }
+        
+        .status-item {
+            display: flex;
+            align-items: center;
+        }
+        
+        .status-icon {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            margin-right: 8px;
+        }
+        
+        .status-icon.positive {
+            background-color: #00c853;
+        }
+        
+        .status-icon.negative {
+            background-color: #ff3d00;
+        }
+        
+        .status-icon.neutral {
+            background-color: #8a9bb2;
+        }
+        
+        .status-value {
+            font-weight: 600;
+            margin-left: 4px;
+        }
+        
+        /* 触摸操作提示 */
+        .touch-hint {
+            position: absolute;
+            bottom: 60px;
+            left: 0;
+            right: 0;
+            display: flex;
+            justify-content: center;
+            pointer-events: none;
+            z-index: 5;
+            opacity: 0.8;
+            transition: opacity 0.5s ease;
+        }
+        
+        .touch-hint.fade-out {
+            opacity: 0;
+        }
+        
+        .touch-hint-content {
+            background-color: rgba(30, 37, 54, 0.9);
+            border-radius: 20px;
+            padding: 10px 20px;
+            font-size: 0.85rem;
+            color: #8a9bb2;
+            display: flex;
+            align-items: center;
+        }
+        
+        .touch-icon {
+            margin-right: 8px;
+            font-size: 1.1rem;
+        }
+        
+        /* 加载动画 */
+        .loading-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(10, 14, 23, 0.9);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 20;
+            transition: opacity 0.3s ease;
+        }
+        
+        .loading-spinner {
+            width: 50px;
+            height: 50px;
+            border: 4px solid #2a3348;
+            border-top-color: #3a7bd5;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-bottom: 20px;
+        }
+        
+        .loading-text {
+            color: #8a9bb2;
+            font-size: 1rem;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        /* 响应式调整 */
+        @media (max-width: 480px) {
+            .toolbar-button {
+                padding: 8px 12px;
+                font-size: 0.85rem;
+                min-width: 70px;
+            }
+            
+            .coordinate-display {
+                font-size: 0.8rem;
+                padding: 8px 12px;
+                min-width: 140px;
+            }
+            
+            .hover-tooltip {
+                min-width: 180px;
+                font-size: 0.8rem;
+                padding: 10px 14px;
+            }
+            
+            .price-label, .time-label {
+                font-size: 0.8rem;
+                padding: 3px 6px;
+            }
+            
+            .status-bar {
+                font-size: 0.8rem;
+                height: 44px;
+            }
+        }
+        
+        @media (max-width: 360px) {
+            .toolbar-title {
+                font-size: 1rem;
+            }
+            
+            .toolbar-button {
+                padding: 8px 10px;
+                font-size: 0.8rem;
+                min-width: 60px;
+            }
+            
+            .coordinate-display {
+                font-size: 0.75rem;
+                padding: 6px 10px;
+                min-width: 120px;
+            }
+            
+            .hover-tooltip {
+                min-width: 160px;
+                font-size: 0.75rem;
+                padding: 8px 12px;
+            }
+            
+            .price-label, .time-label {
+                font-size: 0.75rem;
+                padding: 2px 5px;
+            }
+            
+            .status-bar {
+                font-size: 0.75rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- 顶部工具条 -->
+    <div class="toolbar">
+        <div class="toolbar-title">K线图分析工具</div>
+        <button class="toolbar-button" id="generateBtn">生成K线</button>
+        <button class="toolbar-button" id="resetBtn">重置</button>
+        <button class="toolbar-button" id="toggleCrosshair">十字线:开</button>
+    </div>
+    
+    <!-- 主画布区域 -->
+    <div class="canvas-container">
+        <canvas id="klineCanvas"></canvas>
+        
+        <!-- 悬停十字线 -->
+        <div class="crosshair" id="crosshair">
+            <div class="crosshair-line horizontal" id="crosshairHorizontal"></div>
+            <div class="crosshair-line vertical" id="crosshairVertical"></div>
+        </div>
+        
+        <!-- 价格标签 -->
+        <div class="price-label" id="priceLabel">0.00</div>
+        
+        <!-- 时间标签 -->
+        <div class="time-label" id="timeLabel">--</div>
+        
+        <!-- 悬停提示框 -->
+        <div class="hover-tooltip" id="hoverTooltip">
+            <div class="hover-tooltip-header">
+                <div class="hover-tooltip-title" id="tooltipTitle">K线详情</div>
+                <div class="hover-tooltip-trend" id="tooltipTrend">--</div>
+            </div>
+            <div class="hover-tooltip-body">
+                <div class="tooltip-item">
+                    <span class="tooltip-label">时间:</span>
+                    <span class="tooltip-value" id="tooltipTime">--</span>
+                </div>
+                <div class="tooltip-item">
+                    <span class="tooltip-label">开盘:</span>
+                    <span class="tooltip-value" id="tooltipOpen">--</span>
+                </div>
+                <div class="tooltip-item">
+                    <span class="tooltip-label">收盘:</span>
+                    <span class="tooltip-value" id="tooltipClose">--</span>
+                </div>
+                <div class="tooltip-item">
+                    <span class="tooltip-label">最高:</span>
+                    <span class="tooltip-value" id="tooltipHigh">--</span>
+                </div>
+                <div class="tooltip-item">
+                    <span class="tooltip-label">最低:</span>
+                    <span class="tooltip-value" id="tooltipLow">--</span>
+                </div>
+                <div class="tooltip-item">
+                    <span class="tooltip-label">涨跌幅:</span>
+                    <span class="tooltip-value" id="tooltipChange">--</span>
+                </div>
+                <div class="tooltip-item">
+                    <span class="tooltip-label">振幅:</span>
+                    <span class="tooltip-value" id="tooltipRange">--</span>
+                </div>
+                <div class="tooltip-item">
+                    <span class="tooltip-label">成交量:</span>
+                    <span class="tooltip-value" id="tooltipVolume">--</span>
+                </div>
+            </div>
+        </div>
+        
+        <!-- 画布上的坐标指示器 -->
+        <div class="coordinate-display" id="coordinateDisplay">
+            <div class="coordinate-row">
+                <span class="coordinate-label">时间:</span>
+                <span class="coordinate-value" id="coordTime">--</span>
+            </div>
+            <div class="coordinate-row">
+                <span class="coordinate-label">开盘:</span>
+                <span class="coordinate-value" id="coordOpen">--</span>
+            </div>
+            <div class="coordinate-row">
+                <span class="coordinate-label">收盘:</span>
+                <span class="coordinate-value" id="coordClose">--</span>
+            </div>
+            <div class="coordinate-row">
+                <span class="coordinate-label">高:</span>
+                <span class="coordinate-value" id="coordHigh">--</span>
+            </div>
+            <div class="coordinate-row">
+                <span class="coordinate-label">低:</span>
+                <span class="coordinate-value" id="coordLow">--</span>
+            </div>
+        </div>
+        
+        <!-- 触摸操作提示 -->
+        <div class="touch-hint" id="touchHint">
+            <div class="touch-hint-content">
+                <span class="touch-icon">👆</span>
+                <span>触摸K线查看详细信息</span>
+            </div>
+        </div>
+        
+        <!-- 加载动画 -->
+        <div class="loading-overlay" id="loadingOverlay" style="display: none;">
+            <div class="loading-spinner"></div>
+            <div class="loading-text">正在生成K线数据...</div>
+        </div>
+    </div>
+    
+    <!-- 底部状态栏 -->
+    <div class="status-bar">
+        <div class="status-item">
+            <span class="status-icon positive"></span>
+            <span>上涨:</span>
+            <span class="status-value" id="upCount">0</span>
+        </div>
+        <div class="status-item">
+            <span class="status-icon negative"></span>
+            <span>下跌:</span>
+            <span class="status-value" id="downCount">0</span>
+        </div>
+        <div class="status-item">
+            <span class="status-icon neutral"></span>
+            <span>平盘:</span>
+            <span class="status-value" id="equalCount">0</span>
+        </div>
+        <div class="status-item">
+            <span>数据量:</span>
+            <span class="status-value" id="dataCount">0</span>
+        </div>
+    </div>
+    
+    <script>
+        // 获取DOM元素
+        const canvas = document.getElementById('klineCanvas');
+        const ctx = canvas.getContext('2d');
+        const generateBtn = document.getElementById('generateBtn');
+        const resetBtn = document.getElementById('resetBtn');
+        const toggleCrosshairBtn = document.getElementById('toggleCrosshair');
+        const coordinateDisplay = document.getElementById('coordinateDisplay');
+        const touchHint = document.getElementById('touchHint');
+        const loadingOverlay = document.getElementById('loadingOverlay');
+        
+        // 十字线相关元素
+        const crosshair = document.getElementById('crosshair');
+        const crosshairHorizontal = document.getElementById('crosshairHorizontal');
+        const crosshairVertical = document.getElementById('crosshairVertical');
+        const priceLabel = document.getElementById('priceLabel');
+        const timeLabel = document.getElementById('timeLabel');
+        const hoverTooltip = document.getElementById('hoverTooltip');
+        
+        // 悬停提示框内容元素
+        const tooltipTitle = document.getElementById('tooltipTitle');
+        const tooltipTrend = document.getElementById('tooltipTrend');
+        const tooltipTime = document.getElementById('tooltipTime');
+        const tooltipOpen = document.getElementById('tooltipOpen');
+        const tooltipClose = document.getElementById('tooltipClose');
+        const tooltipHigh = document.getElementById('tooltipHigh');
+        const tooltipLow = document.getElementById('tooltipLow');
+        const tooltipChange = document.getElementById('tooltipChange');
+        const tooltipRange = document.getElementById('tooltipRange');
+        const tooltipVolume = document.getElementById('tooltipVolume');
+        
+        // 状态栏元素
+        const upCountEl = document.getElementById('upCount');
+        const downCountEl = document.getElementById('downCount');
+        const equalCountEl = document.getElementById('equalCount');
+        const dataCountEl = document.getElementById('dataCount');
+        
+        // 坐标显示元素
+        const coordTime = document.getElementById('coordTime');
+        const coordOpen = document.getElementById('coordOpen');
+        const coordClose = document.getElementById('coordClose');
+        const coordHigh = document.getElementById('coordHigh');
+        const coordLow = document.getElementById('coordLow');
+        
+        // K线数据
+        let klineData = [];
+        
+        // 画布绘制参数
+        let canvasWidth = 0;
+        let canvasHeight = 0;
+        let padding = { top: 30, right: 30, bottom: 60, left: 60 };
+        let chartWidth = 0;
+        let chartHeight = 0;
+        
+        // 缩放和拖动参数
+        let scale = 1.0;
+        let offsetX = 0;
+        let offsetY = 0;
+        let isDragging = false;
+        let lastX = 0;
+        let lastY = 0;
+        let initialPinchDistance = null;
+        let initialScale = 1.0;
+        
+        // 悬停相关参数
+        let hoveredCandleIndex = -1;
+        let hoverTimeout = null;
+        let isHovering = false;
+        let mouseX = 0;
+        let mouseY = 0;
+        let isMouseInCanvas = false;
+        
+        // 十字线控制
+        let crosshairEnabled = true;
+        
+        // 初始化画布
+        function initCanvas() {
+            canvasWidth = canvas.parentElement.clientWidth;
+            canvasHeight = canvas.parentElement.clientHeight;
+            
+            canvas.width = canvasWidth;
+            canvas.height = canvasHeight;
+            
+            chartWidth = canvasWidth - padding.left - padding.right;
+            chartHeight = canvasHeight - padding.top - padding.bottom;
+            
+            // 绘制默认网格和坐标
+            drawGrid();
+            drawAxes();
+            
+            // 隐藏触摸提示
+            setTimeout(() => {
+                touchHint.classList.add('fade-out');
+                setTimeout(() => {
+                    touchHint.style.display = 'none';
+                }, 500);
+            }, 3000);
+        }
+        
+        // 绘制网格
+        function drawGrid() {
+            ctx.clearRect(0, 0, canvasWidth, canvasHeight);
+            
+            // 绘制背景
+            ctx.fillStyle = '#0a0e17';
+            ctx.fillRect(0, 0, canvasWidth, canvasHeight);
+            
+            // 网格线颜色和样式
+            ctx.strokeStyle = '#2a3348';
+            ctx.lineWidth = 1;
+            ctx.setLineDash([2, 3]);
+            
+            // 水平网格线
+            const horizontalLineCount = 8;
+            for (let i = 0; i <= horizontalLineCount; i++) {
+                const y = padding.top + (i * chartHeight / horizontalLineCount);
+                ctx.beginPath();
+                ctx.moveTo(padding.left, y);
+                ctx.lineTo(canvasWidth - padding.right, y);
+                ctx.stroke();
+                
+                // 价格标签
+                if (klineData.length > 0) {
+                    const priceRange = getPriceRange();
+                    const price = priceRange.max - (i * (priceRange.max - priceRange.min) / horizontalLineCount);
+                    ctx.fillStyle = '#8a9bb2';
+                    ctx.font = '12px Arial';
+                    ctx.textAlign = 'right';
+                    ctx.fillText(price.toFixed(2), padding.left - 10, y + 4);
+                }
+            }
+            
+            // 垂直网格线
+            const visibleCandles = Math.floor(chartWidth / (15 * scale));
+            for (let i = 0; i <= visibleCandles; i++) {
+                const x = padding.left + (i * chartWidth / visibleCandles);
+                ctx.beginPath();
+                ctx.moveTo(x, padding.top);
+                ctx.lineTo(x, canvasHeight - padding.bottom);
+                ctx.stroke();
+                
+                // 时间标签（每5个K线显示一个）
+                if (klineData.length > 0 && i % 5 === 0) {
+                    const dataIndex = Math.floor((x - padding.left - offsetX) / (15 * scale));
+                    if (dataIndex >= 0 && dataIndex < klineData.length) {
+                        const time = klineData[dataIndex].time;
+                        ctx.fillStyle = '#8a9bb2';
+                        ctx.font = '12px Arial';
+                        ctx.textAlign = 'center';
+                        ctx.fillText(time, x, canvasHeight - padding.bottom + 20);
+                    }
+                }
+            }
+            
+            ctx.setLineDash([]);
+        }
+        
+        // 绘制坐标轴
+        function drawAxes() {
+            ctx.strokeStyle = '#3a7bd5';
+            ctx.lineWidth = 2;
+            
+            // Y轴
+            ctx.beginPath();
+            ctx.moveTo(padding.left, padding.top);
+            ctx.lineTo(padding.left, canvasHeight - padding.bottom);
+            ctx.stroke();
+            
+            // X轴
+            ctx.beginPath();
+            ctx.moveTo(padding.left, canvasHeight - padding.bottom);
+            ctx.lineTo(canvasWidth - padding.right, canvasHeight - padding.bottom);
+            ctx.stroke();
+            
+            // 坐标轴标签
+            ctx.fillStyle = '#6ab7ff';
+            ctx.font = '14px Arial';
+            ctx.textAlign = 'center';
+            
+            // X轴标签
+            ctx.fillText('时间', canvasWidth / 2, canvasHeight - 10);
+            
+            // Y轴标签
+            ctx.save();
+            ctx.translate(20, canvasHeight / 2);
+            ctx.rotate(-Math.PI / 2);
+            ctx.fillText('价格', 0, 0);
+            ctx.restore();
+        }
+        
+        // 获取价格范围
+        function getPriceRange() {
+            if (klineData.length === 0) {
+                return { min: 0, max: 100 };
+            }
+            
+            // 只考虑当前可见区域的数据
+            const startIndex = Math.max(0, Math.floor(-offsetX / (15 * scale)));
+            const endIndex = Math.min(klineData.length, startIndex + Math.floor(chartWidth / (15 * scale)));
+            
+            let min = Number.MAX_VALUE;
+            let max = Number.MIN_VALUE;
+            
+            for (let i = startIndex; i < endIndex; i++) {
+                const data = klineData[i];
+                min = Math.min(min, data.low);
+                max = Math.max(max, data.high);
+            }
+            
+            // 添加一些边距
+            const range = max - min;
+            return {
+                min: min - range * 0.05,
+                max: max + range * 0.05
+            };
+        }
+        
+        // 生成K线数据
+        function generateKlineData(count = 100) {
+            const data = [];
+            let basePrice = 100 + Math.random() * 20;
+            
+            for (let i = 0; i < count; i++) {
+                // 模拟价格波动
+                const change = (Math.random() - 0.5) * 10;
+                const open = basePrice;
+                const close = open + change;
+                
+                // 计算最高价和最低价
+                const high = Math.max(open, close) + Math.random() * 5;
+                const low = Math.min(open, close) - Math.random() * 5;
+                
+                // 确保高>低
+                const adjustedHigh = Math.max(high, low + 0.1);
+                const adjustedLow = Math.min(low, high - 0.1);
+                
+                data.push({
+                    time: `周期 ${i + 1}`,
+                    open: open,
+                    close: close,
+                    high: adjustedHigh,
+                    low: adjustedLow,
+                    volume: Math.random() * 10000 + 5000
+                });
+                
+                // 下一个开盘价基于当前收盘价
+                basePrice = close;
+            }
+            
+            return data;
+        }
+        
+        // 绘制K线
+        function drawKlines() {
+            if (klineData.length === 0) return;
+            
+            const priceRange = getPriceRange();
+            const priceDiff = priceRange.max - priceRange.min;
+            
+            // 计算每个K线的宽度
+            const candleWidth = Math.max(3, Math.min(15, 15 * scale));
+            
+            // 计算起始索引和结束索引
+            const startIndex = Math.max(0, Math.floor(-offsetX / candleWidth));
+            const endIndex = Math.min(klineData.length, startIndex + Math.floor(chartWidth / candleWidth));
+            
+            // 绘制所有K线
+            for (let i = startIndex; i < endIndex; i++) {
+                const data = klineData[i];
+                
+                // 计算X坐标
+                const x = padding.left + (i * candleWidth) + offsetX;
+                
+                // 计算Y坐标（价格映射到画布）
+                const openY = padding.top + chartHeight - ((data.open - priceRange.min) / priceDiff) * chartHeight;
+                const closeY = padding.top + chartHeight - ((data.close - priceRange.min) / priceDiff) * chartHeight;
+                const highY = padding.top + chartHeight - ((data.high - priceRange.min) / priceDiff) * chartHeight;
+                const lowY = padding.top + chartHeight - ((data.low - priceRange.min) / priceDiff) * chartHeight;
+                
+                // 确定颜色：红色为跌，绿色为涨
+                const isBullish = data.close >= data.open;
+                ctx.fillStyle = isBullish ? '#00c853' : '#ff3d00';
+                ctx.strokeStyle = isBullish ? '#00c853' : '#ff3d00';
+                
+                // 绘制K线主体（开盘到收盘的矩形）
+                const bodyTop = Math.min(openY, closeY);
+                const bodyHeight = Math.abs(openY - closeY);
+                
+                // 如果开盘价和收盘价非常接近，绘制一条线
+                if (bodyHeight < 1) {
+                    ctx.fillRect(x - candleWidth/2, bodyTop, candleWidth, 1);
+                } else {
+                    ctx.fillRect(x - candleWidth/2, bodyTop, candleWidth, bodyHeight);
+                }
+                
+                // 绘制影线（最高到最低的线）
+                ctx.lineWidth = 1;
+                ctx.beginPath();
+                ctx.moveTo(x, highY);
+                ctx.lineTo(x, lowY);
+                ctx.stroke();
+                
+                // 绘制上影线（最高到K线主体）
+                ctx.beginPath();
+                ctx.moveTo(x, highY);
+                ctx.lineTo(x, Math.min(openY, closeY));
+                ctx.stroke();
+                
+                // 绘制下影线（最低到K线主体）
+                ctx.beginPath();
+                ctx.moveTo(x, lowY);
+                ctx.lineTo(x, Math.max(openY, closeY));
+                ctx.stroke();
+                
+                // 如果当前K线被悬停，高亮显示
+                if (i === hoveredCandleIndex) {
+                    ctx.strokeStyle = '#6ab7ff';
+                    ctx.lineWidth = 2;
+                    ctx.strokeRect(x - candleWidth/2 - 2, Math.min(highY, lowY) - 2, candleWidth + 4, Math.abs(highY - lowY) + 4);
+                }
+            }
+            
+            // 绘制悬停十字线（当鼠标在K线上时）
+            if (hoveredCandleIndex >= 0 && hoveredCandleIndex < klineData.length && crosshairEnabled) {
+                const data = klineData[hoveredCandleIndex];
+                const x = padding.left + (hoveredCandleIndex * candleWidth) + offsetX;
+                const closeY = padding.top + chartHeight - ((data.close - priceRange.min) / priceDiff) * chartHeight;
+                
+                // 绘制十字线
+                ctx.strokeStyle = 'rgba(106, 183, 255, 0.8)';
+                ctx.lineWidth = 1;
+                ctx.setLineDash([5, 5]);
+                
+                // 垂直线
+                ctx.beginPath();
+                ctx.moveTo(x, padding.top);
+                ctx.lineTo(x, canvasHeight - padding.bottom);
+                ctx.stroke();
+                
+                // 水平线
+                ctx.beginPath();
+                ctx.moveTo(padding.left, closeY);
+                ctx.lineTo(canvasWidth - padding.right, closeY);
+                ctx.stroke();
+                
+                ctx.setLineDash([]);
+                
+                // 在交叉点绘制圆点
+                ctx.fillStyle = '#6ab7ff';
+                ctx.beginPath();
+                ctx.arc(x, closeY, 4, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        }
+        
+        // 更新状态栏
+        function updateStatusBar() {
+            if (klineData.length === 0) {
+                upCountEl.textContent = '0';
+                downCountEl.textContent = '0';
+                equalCountEl.textContent = '0';
+                dataCountEl.textContent = '0';
+                return;
+            }
+            
+            let upCount = 0;
+            let downCount = 0;
+            let equalCount = 0;
+            
+            klineData.forEach(data => {
+                if (data.close > data.open) upCount++;
+                else if (data.close < data.open) downCount++;
+                else equalCount++;
+            });
+            
+            upCountEl.textContent = upCount;
+            downCountEl.textContent = downCount;
+            equalCountEl.textContent = equalCount;
+            dataCountEl.textContent = klineData.length;
+        }
+        
+        // 绘制图表
+        function drawChart() {
+            drawGrid();
+            drawAxes();
+            drawKlines();
+            
+            // 如果十字线已启用且鼠标在画布内，更新十字线位置
+            if (crosshairEnabled && isMouseInCanvas) {
+                updateCrosshair(mouseX, mouseY);
+            }
+        }
+        
+        // 更新十字线位置
+        function updateCrosshair(x, y) {
+            // 确保位置在图表区域内
+            const inChartArea = (
+                x >= padding.left && 
+                x <= canvasWidth - padding.right && 
+                y >= padding.top && 
+                y <= canvasHeight - padding.bottom
+            );
+            
+            if (!inChartArea) {
+                hideCrosshair();
+                return;
+            }
+            
+            // 更新十字线位置
+            crosshair.style.display = 'block';
+            crosshairHorizontal.style.top = `${y}px`;
+            crosshairVertical.style.left = `${x}px`;
+            
+            // 更新价格标签
+            if (klineData.length > 0) {
+                const priceRange = getPriceRange();
+                const priceDiff = priceRange.max - priceRange.min;
+                
+                // 将Y坐标转换为价格
+                const price = priceRange.max - ((y - padding.top) / chartHeight) * priceDiff;
+                priceLabel.textContent = price.toFixed(2);
+                priceLabel.style.display = 'block';
+                
+                // 将价格标签放在横线右侧
+                priceLabel.style.left = `${canvasWidth - padding.right + 10}px`;
+                priceLabel.style.top = `${y - 10}px`;
+                
+                // 更新时间标签
+                const candleWidth = Math.max(3, Math.min(15, 15 * scale));
+                const dataIndex = Math.floor((x - padding.left - offsetX) / candleWidth);
+                
+                if (dataIndex >= 0 && dataIndex < klineData.length) {
+                    timeLabel.textContent = klineData[dataIndex].time;
+                } else {
+                    // 计算大概的时间位置
+                    const approximateIndex = Math.max(0, Math.min(klineData.length - 1, dataIndex));
+                    if (approximateIndex >= 0 && approximateIndex < klineData.length) {
+                        timeLabel.textContent = `~${klineData[approximateIndex].time}`;
+                    } else {
+                        timeLabel.textContent = '--';
+                    }
+                }
+                
+                // 将时间标签放在竖线下方
+                timeLabel.style.left = `${x - 30}px`;
+                timeLabel.style.top = `${canvasHeight - padding.bottom + 10}px`;
+                timeLabel.style.display = 'block';
+            } else {
+                priceLabel.style.display = 'none';
+                timeLabel.style.display = 'none';
+            }
+        }
+        
+        // 隐藏十字线
+        function hideCrosshair() {
+            crosshair.style.display = 'none';
+            priceLabel.style.display = 'none';
+            timeLabel.style.display = 'none';
+        }
+        
+        // 显示悬停提示
+        function showHoverTooltip(data, x, y) {
+            if (!data) return;
+            
+            // 计算涨跌幅
+            const changePercent = ((data.close - data.open) / data.open * 100).toFixed(2);
+            const changeValue = (data.close - data.open).toFixed(2);
+            
+            // 计算振幅
+            const rangePercent = ((data.high - data.low) / data.low * 100).toFixed(2);
+            
+            // 更新工具提示内容
+            tooltipTitle.textContent = `K线详情`;
+            tooltipTime.textContent = data.time;
+            tooltipOpen.textContent = data.open.toFixed(2);
+            tooltipClose.textContent = data.close.toFixed(2);
+            tooltipHigh.textContent = data.high.toFixed(2);
+            tooltipLow.textContent = data.low.toFixed(2);
+            tooltipChange.textContent = `${changeValue} (${changePercent}%)`;
+            tooltipRange.textContent = `${rangePercent}%`;
+            tooltipVolume.textContent = data.volume.toFixed(0);
+            
+            // 设置趋势样式
+            if (data.close > data.open) {
+                tooltipTrend.textContent = `上涨 ${changePercent}%`;
+                tooltipTrend.className = 'hover-tooltip-trend trend-up';
+                tooltipChange.style.color = '#00c853';
+            } else if (data.close < data.open) {
+                tooltipTrend.textContent = `下跌 ${Math.abs(changePercent)}%`;
+                tooltipTrend.className = 'hover-tooltip-trend trend-down';
+                tooltipChange.style.color = '#ff3d00';
+            } else {
+                tooltipTrend.textContent = `平盘`;
+                tooltipTrend.className = 'hover-tooltip-trend trend-neutral';
+                tooltipChange.style.color = '#8a9bb2';
+            }
+            
+            // 显示工具提示
+            hoverTooltip.style.display = 'block';
+            
+            // 调整工具提示位置，确保不会超出画布
+            const tooltipWidth = hoverTooltip.offsetWidth;
+            const tooltipHeight = hoverTooltip.offsetHeight;
+            
+            let left = x + 15;
+            let top = y - tooltipHeight / 2;
+            
+            // 如果工具提示超出右侧边界，调整到左侧
+            if (left + tooltipWidth > canvasWidth) {
+                left = x - tooltipWidth - 15;
+            }
+            
+            // 如果工具提示超出顶部边界，调整位置
+            if (top < 10) {
+                top = 10;
+            }
+            
+            // 如果工具提示超出底部边界，调整位置
+            if (top + tooltipHeight > canvasHeight - 10) {
+                top = canvasHeight - tooltipHeight - 10;
+            }
+            
+            hoverTooltip.style.left = `${left}px`;
+            hoverTooltip.style.top = `${top}px`;
+        }
+        
+        // 隐藏悬停提示
+        function hideHoverTooltip() {
+            hoverTooltip.style.display = 'none';
+            hoveredCandleIndex = -1;
+            isHovering = false;
+            
+            // 重新绘制图表以移除高亮
+            drawChart();
+        }
+        
+        // 查找鼠标/触摸位置对应的K线
+        function findCandleAtPosition(x, y) {
+            if (klineData.length === 0) return -1;
+            
+            // 确保位置在图表区域内
+            if (x < padding.left || x > canvasWidth - padding.right || 
+                y < padding.top || y > canvasHeight - padding.bottom) {
+                return -1;
+            }
+            
+            const candleWidth = Math.max(3, Math.min(15, 15 * scale));
+            const dataIndex = Math.floor((x - padding.left - offsetX) / candleWidth);
+            
+            // 检查索引是否有效
+            if (dataIndex < 0 || dataIndex >= klineData.length) {
+                return -1;
+            }
+            
+            // 检查y坐标是否在K线的价格范围内
+            const priceRange = getPriceRange();
+            const priceDiff = priceRange.max - priceRange.min;
+            
+            const data = klineData[dataIndex];
+            const highY = padding.top + chartHeight - ((data.high - priceRange.min) / priceDiff) * chartHeight;
+            const lowY = padding.top + chartHeight - ((data.low - priceRange.min) / priceDiff) * chartHeight;
+            
+            // 检查y坐标是否在K线范围内（包括影线）
+            if (y >= Math.min(highY, lowY) && y <= Math.max(highY, lowY)) {
+                return dataIndex;
+            }
+            
+            return -1;
+        }
+        
+        // 显示坐标信息
+        function showCoordinateInfo(x, y) {
+            // 将画布坐标转换为数据索引
+            const candleWidth = Math.max(3, Math.min(15, 15 * scale));
+            const dataIndex = Math.floor((x - padding.left - offsetX) / candleWidth);
+            
+            if (dataIndex >= 0 && dataIndex < klineData.length) {
+                const data = klineData[dataIndex];
+                
+                // 更新坐标显示
+                coordTime.textContent = data.time;
+                coordOpen.textContent = data.open.toFixed(2);
+                coordClose.textContent = data.close.toFixed(2);
+                coordHigh.textContent = data.high.toFixed(2);
+                coordLow.textContent = data.low.toFixed(2);
+                
+                // 显示坐标指示器
+                coordinateDisplay.style.display = 'block';
+                coordinateDisplay.style.left = `${x + 10}px`;
+                coordinateDisplay.style.top = `${y - 100}px`;
+            }
+        }
+        
+        // 隐藏坐标信息
+        function hideCoordinateInfo() {
+            coordinateDisplay.style.display = 'none';
+        }
+        
+        // 事件监听器
+        function initEventListeners() {
+            // 生成K线按钮点击事件
+            generateBtn.addEventListener('click', () => {
+                loadingOverlay.style.display = 'flex';
+                
+                // 模拟数据生成延迟
+                setTimeout(() => {
+                    klineData = generateKlineData(100);
+                    scale = 1.0;
+                    offsetX = 0;
+                    offsetY = 0;
+                    hoveredCandleIndex = -1;
+                    
+                    drawChart();
+                    updateStatusBar();
+                    hideHoverTooltip();
+                    hideCoordinateInfo();
+                    loadingOverlay.style.display = 'none';
+                }, 500);
+            });
+            
+            // 重置按钮点击事件
+            resetBtn.addEventListener('click', () => {
+                klineData = [];
+                scale = 1.0;
+                offsetX = 0;
+                offsetY = 0;
+                hoveredCandleIndex = -1;
+                
+                drawChart();
+                updateStatusBar();
+                hideHoverTooltip();
+                hideCoordinateInfo();
+                hideCrosshair();
+            });
+            
+            // 切换十字线按钮
+            toggleCrosshairBtn.addEventListener('click', () => {
+                crosshairEnabled = !crosshairEnabled;
+                toggleCrosshairBtn.textContent = `十字线:${crosshairEnabled ? '开' : '关'}`;
+                
+                if (!crosshairEnabled) {
+                    hideCrosshair();
+                } else if (isMouseInCanvas) {
+                    updateCrosshair(mouseX, mouseY);
+                }
+            });
+            
+            // 画布鼠标进入事件
+            canvas.addEventListener('mouseenter', () => {
+                isMouseInCanvas = true;
+                if (crosshairEnabled) {
+                    updateCrosshair(mouseX, mouseY);
+                }
+            });
+            
+            // 画布鼠标移动事件（桌面端悬停）
+            canvas.addEventListener('mousemove', (e) => {
+                const rect = canvas.getBoundingClientRect();
+                mouseX = e.clientX - rect.left;
+                mouseY = e.clientY - rect.top;
+                
+                // 如果十字线已启用，更新十字线位置
+                if (crosshairEnabled) {
+                    updateCrosshair(mouseX, mouseY);
+                }
+                
+                // 查找当前位置对应的K线
+                const candleIndex = findCandleAtPosition(mouseX, mouseY);
+                
+                if (candleIndex >= 0) {
+                    hoveredCandleIndex = candleIndex;
+                    const data = klineData[candleIndex];
+                    showHoverTooltip(data, mouseX, mouseY);
+                    drawChart(); // 重新绘制以显示高亮
+                } else {
+                    hideHoverTooltip();
+                }
+            });
+            
+            // 画布鼠标离开事件
+            canvas.addEventListener('mouseleave', () => {
+                isMouseInCanvas = false;
+                hideCrosshair();
+                hideHoverTooltip();
+            });
+            
+            // 画布触摸事件（移动端）
+            canvas.addEventListener('touchstart', (e) => {
+                e.preventDefault();
+                
+                if (e.touches.length === 1) {
+                    // 单指触摸：显示悬停信息
+                    const rect = canvas.getBoundingClientRect();
+                    const x = e.touches[0].clientX - rect.left;
+                    const y = e.touches[0].clientY - rect.top;
+                    
+                    // 更新十字线位置
+                    if (crosshairEnabled) {
+                        mouseX = x;
+                        mouseY = y;
+                        updateCrosshair(x, y);
+                    }
+                    
+                    // 查找当前位置对应的K线
+                    const candleIndex = findCandleAtPosition(x, y);
+                    
+                    if (candleIndex >= 0) {
+                        hoveredCandleIndex = candleIndex;
+                        const data = klineData[candleIndex];
+                        showHoverTooltip(data, x, y);
+                        drawChart(); // 重新绘制以显示高亮
+                        
+                        // 设置触摸悬停状态
+                        isHovering = true;
+                        
+                        // 清除之前的超时
+                        if (hoverTimeout) clearTimeout(hoverTimeout);
+                        
+                        // 设置超时隐藏悬停提示（3秒后）
+                        hoverTimeout = setTimeout(() => {
+                            if (isHovering) {
+                                hideHoverTooltip();
+                            }
+                        }, 3000);
+                    }
+                    
+                    // 同时开始拖动
+                    isDragging = true;
+                    lastX = e.touches[0].clientX;
+                    lastY = e.touches[0].clientY;
+                } else if (e.touches.length === 2) {
+                    // 双指触摸：开始缩放
+                    isDragging = false;
+                    isHovering = false;
+                    hideHoverTooltip();
+                    
+                    const touch1 = e.touches[0];
+                    const touch2 = e.touches[1];
+                    
+                    initialPinchDistance = Math.sqrt(
+                        Math.pow(touch2.clientX - touch1.clientX, 2) +
+                        Math.pow(touch2.clientY - touch1.clientY, 2)
+                    );
+                    initialScale = scale;
+                }
+            });
+            
+            canvas.addEventListener('touchmove', (e) => {
+                e.preventDefault();
+                
+                if (e.touches.length === 1 && isDragging) {
+                    // 单指拖动：移动视图
+                    const currentX = e.touches[0].clientX;
+                    const currentY = e.touches[0].clientY;
+                    
+                    offsetX += (currentX - lastX) * 1.5;
+                    offsetY += (currentY - lastY) * 1.5;
+                    
+                    // 限制拖动范围
+                    const maxOffsetX = klineData.length * 15 * scale - chartWidth;
+                    offsetX = Math.max(-maxOffsetX, Math.min(0, offsetX));
+                    offsetY = Math.max(-chartHeight * 0.2, Math.min(chartHeight * 0.2, offsetY));
+                    
+                    lastX = currentX;
+                    lastY = currentY;
+                    
+                    drawChart();
+                    
+                    // 如果正在悬停，更新悬停提示位置
+                    if (hoveredCandleIndex >= 0 && isHovering) {
+                        const rect = canvas.getBoundingClientRect();
+                        const x = e.touches[0].clientX - rect.left;
+                        const y = e.touches[0].clientY - rect.top;
+                        
+                        // 更新十字线位置
+                        if (crosshairEnabled) {
+                            mouseX = x;
+                            mouseY = y;
+                            updateCrosshair(x, y);
+                        }
+                        
+                        const data = klineData[hoveredCandleIndex];
+                        showHoverTooltip(data, x, y);
+                    }
+                } else if (e.touches.length === 2) {
+                    // 双指缩放
+                    const touch1 = e.touches[0];
+                    const touch2 = e.touches[1];
+                    
+                    const currentDistance = Math.sqrt(
+                        Math.pow(touch2.clientX - touch1.clientX, 2) +
+                        Math.pow(touch2.clientY - touch1.clientY, 2)
+                    );
+                    
+                    if (initialPinchDistance !== null) {
+                        const scaleFactor = currentDistance / initialPinchDistance;
+                        scale = Math.max(0.5, Math.min(3.0, initialScale * scaleFactor));
+                        
+                        // 限制缩放范围
+                        scale = Math.max(0.5, Math.min(3.0, scale));
+                        
+                        drawChart();
+                    }
+                }
+            });
+            
+            canvas.addEventListener('touchend', (e) => {
+                e.preventDefault();
+                
+                if (e.touches.length === 0) {
+                    // 所有手指离开
+                    isDragging = false;
+                    initialPinchDistance = null;
+                    
+                    // 如果不是悬停状态，隐藏悬停提示
+                    if (!isHovering) {
+                        setTimeout(() => {
+                            hideHoverTooltip();
+                        }, 1000);
+                    }
+                } else if (e.touches.length === 1) {
+                    // 只剩一个手指，转换为拖动模式
+                    isDragging = true;
+                    isHovering = false;
+                    lastX = e.touches[0].clientX;
+                    lastY = e.touches[0].clientY;
+                }
+            });
+            
+            // 窗口大小调整事件
+            window.addEventListener('resize', () => {
+                initCanvas();
+                drawChart();
+                
+                // 如果正在显示十字线，需要重新定位
+                if (crosshairEnabled && isMouseInCanvas) {
+                    updateCrosshair(mouseX, mouseY);
+                }
+                
+                // 如果正在显示悬停提示，需要重新定位
+                if (hoverTooltip.style.display === 'block' && hoveredCandleIndex >= 0) {
+                    // 这里需要重新计算位置，但为了简化，我们直接隐藏
+                    hideHoverTooltip();
+                }
+            });
+        }
+        
+        // 初始化
+        function init() {
+            initCanvas();
+            initEventListeners();
+            updateStatusBar();
+        }
+        
+        // 页面加载完成后初始化
+        window.addEventListener('load', init);
+    </script>
+</body>
+</html>

@@ -1,0 +1,721 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>移动端K线图</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            background-color: #f5f5f5;
+            overflow: hidden;
+        }
+
+        /* 顶部工具栏 */
+        .toolbar {
+            height: 50px;
+            background-color: #2c3e50;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 15px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+            z-index: 10;
+        }
+
+        .toolbar-title {
+            color: white;
+            font-size: 18px;
+            font-weight: 500;
+        }
+
+        .generate-btn {
+            background-color: #3498db;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            padding: 8px 15px;
+            font-size: 14px;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+
+        .generate-btn:active {
+            background-color: #2980b9;
+        }
+
+        /* 中间画布区域 */
+        .canvas-container {
+            flex: 1;
+            position: relative;
+            padding: 10px;
+            overflow: hidden;
+            background-color: white;
+        }
+
+        #klineCanvas {
+            width: 100%;
+            height: 100%;
+            touch-action: none; /* 禁用默认触摸行为 */
+        }
+
+        /* 底部状态栏 */
+        .status-bar {
+            height: 40px;
+            background-color: #ecf0f1;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 15px;
+            font-size: 14px;
+            color: #34495e;
+            border-top: 1px solid #ddd;
+        }
+
+        .status-item {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        .status-label {
+            font-size: 12px;
+            color: #7f8c8d;
+        }
+
+        /* 加载提示 */
+        .loading {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: #7f8c8d;
+            font-size: 16px;
+        }
+
+        /* K线悬浮提示框 */
+        .kline-tooltip {
+            position: absolute;
+            background-color: rgba(0, 0, 0, 0.8);
+            color: white;
+            padding: 8px 10px;
+            border-radius: 4px;
+            font-size: 12px;
+            z-index: 5;
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.2s;
+            white-space: nowrap;
+        }
+
+        .kline-tooltip table {
+            border-collapse: collapse;
+        }
+
+        .kline-tooltip td {
+            padding: 2px 5px;
+        }
+
+        .kline-tooltip .label {
+            color: #999;
+        }
+
+        .kline-tooltip .up {
+            color: #e74c3c;
+        }
+
+        .kline-tooltip .down {
+            color: #2ecc71;
+        }
+
+        /* 价格标注提示框 - 固定在横线右端 */
+        .price-marker {
+            position: absolute;
+            background-color: rgba(52, 152, 219, 0.9);
+            color: white;
+            padding: 4px 8px;
+            border-radius: 3px;
+            font-size: 11px;
+            z-index: 4;
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.2s;
+            white-space: nowrap;
+            /* 固定在画布右侧 */
+            left: auto !important;
+            right: 15px !important;
+        }
+
+        /* 时间标注提示框 - 固定在竖线底部 */
+        .time-marker {
+            position: absolute;
+            background-color: rgba(155, 89, 182, 0.9);
+            color: white;
+            padding: 4px 8px;
+            border-radius: 3px;
+            font-size: 11px;
+            z-index: 4;
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.2s;
+            white-space: nowrap;
+            /* 固定在画布底部 */
+            top: auto !important;
+            bottom: 15px !important;
+        }
+
+        /* 响应式调整 */
+        @media (max-width: 375px) {
+            .toolbar-title {
+                font-size: 16px;
+            }
+            
+            .generate-btn {
+                padding: 6px 12px;
+                font-size: 13px;
+            }
+            
+            .status-bar {
+                font-size: 13px;
+            }
+            
+            .kline-tooltip {
+                font-size: 11px;
+                padding: 6px 8px;
+            }
+            
+            .price-marker {
+                font-size: 10px;
+                padding: 3px 6px;
+                right: 10px !important;
+            }
+            
+            .time-marker {
+                font-size: 10px;
+                padding: 3px 6px;
+                bottom: 10px !important;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- 顶部工具栏 -->
+    <div class="toolbar">
+        <div class="toolbar-title">K线图分析</div>
+        <button class="generate-btn" id="generateBtn">生成K线数据</button>
+    </div>
+
+    <!-- 中间画布区域 -->
+    <div class="canvas-container" id="canvasContainer">
+        <div class="loading" id="loading">点击生成按钮开始</div>
+        <canvas id="klineCanvas"></canvas>
+        <!-- K线悬浮提示框 -->
+        <div class="kline-tooltip" id="klineTooltip"></div>
+        <!-- 价格标注提示框 -->
+        <div class="price-marker" id="priceMarker"></div>
+        <!-- 时间标注提示框 -->
+        <div class="time-marker" id="timeMarker"></div>
+    </div>
+
+    <!-- 底部状态栏 -->
+    <div class="status-bar">
+        <div class="status-item">
+            <span class="status-label">最高</span>
+            <span id="highPrice">--</span>
+        </div>
+        <div class="status-item">
+            <span class="status-label">最低</span>
+            <span id="lowPrice">--</span>
+        </div>
+        <div class="status-item">
+            <span class="status-label">均价</span>
+            <span id="avgPrice">--</span>
+        </div>
+        <div class="status-item">
+            <span class="status-label">数据量</span>
+            <span id="dataCount">0</span>
+        </div>
+    </div>
+
+    <script>
+        // 获取DOM元素
+        const generateBtn = document.getElementById('generateBtn');
+        const canvas = document.getElementById('klineCanvas');
+        const ctx = canvas.getContext('2d');
+        const loading = document.getElementById('loading');
+        const highPriceEl = document.getElementById('highPrice');
+        const lowPriceEl = document.getElementById('lowPrice');
+        const avgPriceEl = document.getElementById('avgPrice');
+        const dataCountEl = document.getElementById('dataCount');
+        const canvasContainer = document.getElementById('canvasContainer');
+        const klineTooltip = document.getElementById('klineTooltip');
+        const priceMarker = document.getElementById('priceMarker');
+        const timeMarker = document.getElementById('timeMarker');
+
+        // K线数据存储
+        let klineData = [];
+        let canvasWidth = 0;
+        let canvasHeight = 0;
+        let klineWidth = 0;
+        let priceMin = 0;
+        let priceMax = 0;
+        let priceRange = 0;
+        let gap = 1; // K线间距
+        let mouseX = 0; // 记录鼠标X坐标
+        let mouseY = 0; // 记录鼠标Y坐标
+        let showPriceLine = false; // 是否显示价格横线
+        let showTimeLine = false; // 是否显示时间竖线
+
+        // 初始化画布大小
+        function initCanvasSize() {
+            const container = canvas.parentElement;
+            canvasWidth = container.clientWidth - 20; // 减去内边距
+            canvasHeight = container.clientHeight - 20;
+            canvas.width = canvasWidth * window.devicePixelRatio;
+            canvas.height = canvasHeight * window.devicePixelRatio;
+            ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
+        }
+
+        // 生成随机K线数据 (OHLC: Open, High, Low, Close)
+        function generateKlineData(count = 100) {
+            const data = [];
+            let basePrice = Math.random() * 1000 + 1000; // 基础价格
+            
+            for (let i = 0; i < count; i++) {
+                // 生成合理的价格波动
+                const change = (Math.random() - 0.5) * 20;
+                basePrice += change;
+                
+                const open = basePrice + (Math.random() - 0.5) * 10;
+                const close = basePrice + (Math.random() - 0.5) * 10;
+                const high = Math.max(open, close) + Math.random() * 15;
+                const low = Math.min(open, close) - Math.random() * 15;
+                
+                data.push({
+                    open: parseFloat(open.toFixed(2)),
+                    high: parseFloat(high.toFixed(2)),
+                    low: parseFloat(low.toFixed(2)),
+                    close: parseFloat(close.toFixed(2)),
+                    timestamp: Date.now() - (count - i) * 3600000 // 模拟时间戳
+                });
+            }
+            
+            return data;
+        }
+
+        // 格式化时间显示
+        function formatTimestamp(timestamp) {
+            const date = new Date(timestamp);
+            return `${date.getMonth()+1}/${date.getDate()} ${date.getHours()}:00`;
+        }
+
+        // 计算数据统计信息
+        function calculateStats(data) {
+            if (!data.length) return null;
+            
+            const highs = data.map(item => item.high);
+            const lows = data.map(item => item.low);
+            const closes = data.map(item => item.close);
+            
+            const high = Math.max(...highs);
+            const low = Math.min(...lows);
+            const avg = closes.reduce((sum, val) => sum + val, 0) / closes.length;
+            
+            return {
+                high: high.toFixed(2),
+                low: low.toFixed(2),
+                avg: avg.toFixed(2),
+                count: data.length
+            };
+        }
+
+        // 更新状态栏信息
+        function updateStatusBar(stats) {
+            if (!stats) {
+                highPriceEl.textContent = '--';
+                lowPriceEl.textContent = '--';
+                avgPriceEl.textContent = '--';
+                dataCountEl.textContent = '0';
+                return;
+            }
+            
+            highPriceEl.textContent = stats.high;
+            lowPriceEl.textContent = stats.low;
+            avgPriceEl.textContent = stats.avg;
+            dataCountEl.textContent = stats.count;
+        }
+
+        // 显示K线提示框
+        function showTooltip(x, y, data) {
+            const isUp = data.close >= data.open;
+            const change = (data.close - data.open).toFixed(2);
+            const changePercent = ((change / data.open) * 100).toFixed(2);
+            
+            // 设置提示框内容
+            klineTooltip.innerHTML = `
+                <table>
+                    <tr><td class="label">时间:</td><td>${formatTimestamp(data.timestamp)}</td></tr>
+                    <tr><td class="label">开盘:</td><td>${data.open}</td></tr>
+                    <tr><td class="label">最高:</td><td>${data.high}</td></tr>
+                    <tr><td class="label">最低:</td><td>${data.low}</td></tr>
+                    <tr><td class="label">收盘:</td><td class="${isUp ? 'up' : 'down'}">${data.close}</td></tr>
+                    <tr><td class="label">涨跌:</td><td class="${isUp ? 'up' : 'down'}">${change} (${changePercent}%)</td></tr>
+                </table>
+            `;
+            
+            // 计算提示框位置（避免超出屏幕）
+            const containerRect = canvasContainer.getBoundingClientRect();
+            const tooltipWidth = klineTooltip.offsetWidth;
+            const tooltipHeight = klineTooltip.offsetHeight;
+            
+            let left = x + 10;
+            let top = y - tooltipHeight/2;
+            
+            // 右侧边界检查（避开价格标注）
+            if (left + tooltipWidth > containerRect.width - 80) {
+                left = x - tooltipWidth - 10;
+            }
+            
+            // 顶部边界检查
+            if (top < 0) top = 0;
+            // 底部边界检查
+            if (top + tooltipHeight > containerRect.height) {
+                top = containerRect.height - tooltipHeight;
+            }
+            
+            // 设置位置和显示
+            klineTooltip.style.left = `${left}px`;
+            klineTooltip.style.top = `${top}px`;
+            klineTooltip.style.opacity = '1';
+        }
+
+        // 隐藏K线提示框
+        function hideTooltip() {
+            klineTooltip.style.opacity = '0';
+        }
+
+        // 显示价格标注（固定在横线右端）
+        function showPriceMarker(y, price) {
+            // 设置价格标注内容
+            priceMarker.textContent = price.toFixed(2);
+            
+            // 固定在画布右侧，垂直位置与横线对齐
+            let top = y - 10;
+            
+            // 垂直边界检查
+            if (top < 0) top = 0;
+            if (top + 20 > canvasHeight) top = canvasHeight - 20;
+            
+            // 设置位置和显示（水平位置通过CSS固定在右侧）
+            priceMarker.style.top = `${top}px`;
+            priceMarker.style.opacity = '1';
+        }
+
+        // 隐藏价格标注
+        function hidePriceMarker() {
+            priceMarker.style.opacity = '0';
+        }
+
+        // 显示时间标注（固定在竖线底部）
+        function showTimeMarker(x, timestamp) {
+            // 设置时间标注内容
+            timeMarker.textContent = formatTimestamp(timestamp);
+            
+            // 固定在画布底部，水平位置与竖线对齐
+            let left = x - timeMarker.offsetWidth/2;
+            
+            // 水平边界检查
+            if (left < 10) left = 10;
+            if (left + timeMarker.offsetWidth > canvasWidth - 10) left = canvasWidth - timeMarker.offsetWidth - 10;
+            
+            // 设置位置和显示（垂直位置通过CSS固定在底部）
+            timeMarker.style.left = `${left}px`;
+            timeMarker.style.opacity = '1';
+        }
+
+        // 隐藏时间标注
+        function hideTimeMarker() {
+            timeMarker.style.opacity = '0';
+        }
+
+        // 将画布Y坐标转换为价格
+        function yToPrice(y) {
+            if (priceRange === 0) return 0;
+            // 反转计算（canvas原点在左上角）
+            const price = priceMax - (y / canvasHeight) * priceRange;
+            return parseFloat(price.toFixed(2));
+        }
+
+        // 获取鼠标/触摸位置对应的K线索引
+        function getKlineIndexByPosition(clientX) {
+            if (!klineData.length) return -1;
+            
+            // 转换为画布相对坐标
+            const rect = canvas.getBoundingClientRect();
+            const x = (clientX - rect.left) / rect.width * canvasWidth;
+            
+            // 计算当前位置对应的K线索引
+            const klinePosition = x / (klineWidth + gap);
+            const index = Math.floor(klinePosition);
+            
+            // 边界检查
+            if (index < 0 || index >= klineData.length) return -1;
+            
+            return index;
+        }
+
+        // 处理鼠标/触摸移动事件
+        function handlePointerMove(e) {
+            if (!klineData.length) return;
+            
+            // 兼容鼠标和触摸事件
+            const clientX = e.clientX || (e.touches && e.touches[0].clientX);
+            const clientY = e.clientY || (e.touches && e.touches[0].clientY);
+            
+            // 获取画布相对坐标
+            const rect = canvas.getBoundingClientRect();
+            mouseX = (clientX - rect.left) / rect.width * canvasWidth;
+            mouseY = (clientY - rect.top) / rect.height * canvasHeight;
+            showPriceLine = true;
+            showTimeLine = true;
+            
+            // 计算当前位置价格
+            const currentPrice = yToPrice(mouseY);
+            
+            // 显示价格横线和标注（标注固定在右端）
+            showPriceMarker(mouseY, currentPrice);
+            
+            // 处理K线提示和时间标注
+            const index = getKlineIndexByPosition(clientX);
+            if (index === -1) {
+                hideTooltip();
+                hideTimeMarker();
+            } else {
+                const data = klineData[index];
+                showTooltip(clientX - rect.left, clientY - rect.top, data);
+                // 显示时间标注（在竖线底部）
+                const highlightX = index * (klineWidth + gap) + klineWidth/2;
+                showTimeMarker(highlightX, data.timestamp);
+            }
+            
+            // 重新绘制图表（包含横线和竖线）
+            drawKlineChart(true, index);
+        }
+
+        // 绘制K线图
+        function drawKlineChart(highlightIndex = -1, highlightIdx = -1) {
+            if (!klineData.length) return;
+            
+            // 清空画布
+            ctx.clearRect(0, 0, canvasWidth, canvasHeight);
+            
+            // 计算价格范围
+            const allPrices = klineData.flatMap(item => [item.high, item.low]);
+            priceMin = Math.min(...allPrices);
+            priceMax = Math.max(...allPrices);
+            priceRange = priceMax - priceMin;
+            
+            // K线绘制参数
+            klineWidth = Math.max(2, canvasWidth / klineData.length - 1);
+            gap = 1; // K线之间的间距
+            let x = 0;
+            
+            // 绘制网格背景
+            ctx.strokeStyle = '#f0f0f0';
+            ctx.lineWidth = 0.5;
+            
+            // 绘制水平网格线
+            const gridLines = 5;
+            for (let i = 0; i <= gridLines; i++) {
+                const y = (canvasHeight / gridLines) * i;
+                ctx.beginPath();
+                ctx.moveTo(0, y);
+                ctx.lineTo(canvasWidth, y);
+                ctx.stroke();
+            }
+            
+            // 绘制垂直网格线
+            const vGridLines = 10;
+            for (let i = 0; i <= vGridLines; i++) {
+                const x = (canvasWidth / vGridLines) * i;
+                ctx.beginPath();
+                ctx.moveTo(x, 0);
+                ctx.lineTo(x, canvasHeight);
+                ctx.stroke();
+            }
+            
+            // 绘制鼠标位置水平横线（延伸到画布最右端）
+            if (showPriceLine && priceRange > 0) {
+                ctx.strokeStyle = 'rgba(52, 152, 219, 0.8)';
+                ctx.lineWidth = 1;
+                ctx.setLineDash([5, 3]); // 虚线样式
+                ctx.beginPath();
+                ctx.moveTo(0, mouseY);
+                ctx.lineTo(canvasWidth, mouseY); // 横线延伸到画布最右端
+                ctx.stroke();
+                ctx.setLineDash([]); // 恢复实线
+            }
+            
+            // 绘制高亮线（垂直参考线）
+            if (showTimeLine && highlightIdx >= 0 && highlightIdx < klineData.length) {
+                const highlightX = highlightIdx * (klineWidth + gap) + klineWidth/2;
+                ctx.strokeStyle = 'rgba(155, 89, 182, 0.5)';
+                ctx.lineWidth = 1;
+                ctx.setLineDash([3, 2]); // 更细的虚线
+                ctx.beginPath();
+                ctx.moveTo(highlightX, 0);
+                ctx.lineTo(highlightX, canvasHeight); // 竖线延伸到画布最底部
+                ctx.stroke();
+                ctx.setLineDash([]); // 恢复实线
+            }
+            
+            // 绘制每个K线
+            klineData.forEach((item, index) => {
+                // 价格转坐标 (反转Y轴，因为canvas原点在左上角)
+                const yOpen = canvasHeight - ((item.open - priceMin) / priceRange) * canvasHeight;
+                const yClose = canvasHeight - ((item.close - priceMin) / priceRange) * canvasHeight;
+                const yHigh = canvasHeight - ((item.high - priceMin) / priceRange) * canvasHeight;
+                const yLow = canvasHeight - ((item.low - priceMin) / priceRange) * canvasHeight;
+                
+                // 确定K线颜色 (涨红跌绿)
+                const isUp = item.close >= item.open;
+                ctx.strokeStyle = isUp ? '#e74c3c' : '#2ecc71';
+                ctx.fillStyle = isUp ? '#e74c3c' : '#2ecc71';
+                
+                // 高亮K线样式
+                if (index === highlightIdx) {
+                    ctx.strokeStyle = isUp ? '#c0392b' : '#27ae60';
+                    ctx.fillStyle = isUp ? 'rgba(231, 76, 60, 0.8)' : 'rgba(46, 204, 113, 0.8)';
+                }
+                
+                // 绘制高低线
+                ctx.lineWidth = 1;
+                ctx.beginPath();
+                ctx.moveTo(x + klineWidth/2, yHigh);
+                ctx.lineTo(x + klineWidth/2, yLow);
+                ctx.stroke();
+                
+                // 绘制开盘收盘矩形
+                const rectHeight = Math.abs(yClose - yOpen);
+                const rectY = Math.min(yOpen, yClose);
+                
+                ctx.fillRect(x, rectY, klineWidth, rectHeight || 1); // 高度至少1px
+                
+                // 移动到下一个K线位置
+                x += klineWidth + gap;
+            });
+            
+            // 绘制坐标轴标签
+            ctx.fillStyle = '#7f8c8d';
+            ctx.font = '10px sans-serif';
+            
+            // Y轴价格标签
+            ctx.fillText(priceMax.toFixed(0), 5, 15);
+            ctx.fillText(((priceMax + priceMin)/2).toFixed(0), 5, canvasHeight/2);
+            ctx.fillText(priceMin.toFixed(0), 5, canvasHeight - 5);
+            
+            // X轴时间标签
+            ctx.textAlign = 'right';
+            ctx.fillText('开始', 10, canvasHeight - 5);
+            ctx.fillText('结束', canvasWidth - 10, canvasHeight - 5);
+        }
+
+        // 生成K线数据并绘制
+        function generateAndDrawKline() {
+            // 显示加载状态
+            loading.textContent = '正在生成数据...';
+            
+            // 异步生成数据，避免UI阻塞
+            setTimeout(() => {
+                // 生成100组K线数据
+                klineData = generateKlineData(100);
+                
+                // 重新初始化画布大小
+                initCanvasSize();
+                
+                // 计算统计信息
+                const stats = calculateStats(klineData);
+                
+                // 更新状态栏
+                updateStatusBar(stats);
+                
+                // 隐藏加载提示
+                loading.textContent = '';
+                
+                // 绘制K线图
+                drawKlineChart();
+            }, 100);
+        }
+
+        // 初始化事件监听
+        function initEvents() {
+            // 鼠标移动事件
+            canvas.addEventListener('mousemove', (e) => {
+                handlePointerMove(e);
+            });
+            
+            // 鼠标离开画布
+            canvas.addEventListener('mouseleave', () => {
+                hideTooltip();
+                hidePriceMarker();
+                hideTimeMarker();
+                showPriceLine = false;
+                showTimeLine = false;
+                drawKlineChart();
+            });
+            
+            // 移动端触摸事件
+            canvas.addEventListener('touchmove', (e) => {
+                e.preventDefault(); // 防止滚动
+                handlePointerMove(e);
+            }, { passive: false });
+            
+            // 触摸结束
+            canvas.addEventListener('touchend', () => {
+                hideTooltip();
+                hidePriceMarker();
+                hideTimeMarker();
+                showPriceLine = false;
+                showTimeLine = false;
+                drawKlineChart();
+            });
+            
+            // 窗口大小变化时重新调整画布
+            window.addEventListener('resize', () => {
+                initCanvasSize();
+                if (klineData.length) {
+                    drawKlineChart();
+                }
+            });
+        }
+
+        // 初始化
+        function init() {
+            initCanvasSize();
+            initEvents();
+            
+            // 绑定按钮点击事件
+            generateBtn.addEventListener('click', generateAndDrawKline);
+            
+            // 移动端触摸优化
+            generateBtn.addEventListener('touchstart', (e) => {
+                e.preventDefault();
+                generateAndDrawKline();
+            });
+        }
+
+        // 启动应用
+        init();
+    </script>
+</body>
+</html>
