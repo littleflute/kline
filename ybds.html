@@ -1,0 +1,1021 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>移动端K线图</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            touch-action: none;
+            -webkit-tap-highlight-color: transparent;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: #121826;
+            color: #e0e0e0;
+            overflow: hidden;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        /* 顶部工具条 */
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 16px;
+            background-color: #1a1f2e;
+            border-bottom: 1px solid #2d3748;
+            height: 60px;
+            min-height: 60px;
+            flex-shrink: 0;
+        }
+        
+        .header h1 {
+            font-size: 18px;
+            font-weight: 600;
+            color: #ffffff;
+        }
+        
+        .header-controls {
+            display: flex;
+            gap: 12px;
+        }
+        
+        .btn {
+            padding: 8px 16px;
+            background-color: #2d3748;
+            border: none;
+            border-radius: 6px;
+            color: #e0e0e0;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: background-color 0.2s;
+            min-height: 40px;
+            min-width: 44px;
+        }
+        
+        .btn:hover {
+            background-color: #4a5568;
+        }
+        
+        .btn.active {
+            background-color: #3182ce;
+            color: white;
+        }
+        
+        .btn:active {
+            transform: scale(0.98);
+        }
+        
+        /* 中间画布区域 */
+        .chart-container {
+            flex: 1;
+            position: relative;
+            overflow: hidden;
+            background-color: #0f131f;
+        }
+        
+        #klineCanvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+        }
+        
+        /* 十字线坐标显示 */
+        .crosshair-info {
+            position: absolute;
+            background-color: rgba(26, 31, 46, 0.9);
+            border: 1px solid #4a5568;
+            border-radius: 6px;
+            font-size: 12px;
+            padding: 8px 12px;
+            pointer-events: none;
+            z-index: 10;
+            max-width: 200px;
+            display: none;
+        }
+        
+        .price-info {
+            position: absolute;
+            right: 0;
+            padding: 4px 8px;
+            background-color: rgba(26, 31, 46, 0.9);
+            border: 1px solid #4a5568;
+            border-radius: 4px;
+            font-size: 12px;
+            font-family: 'Monaco', 'Consolas', monospace;
+            display: none;
+        }
+        
+        .time-info {
+            position: absolute;
+            bottom: 0;
+            padding: 4px 8px;
+            background-color: rgba(26, 31, 46, 0.9);
+            border: 1px solid #4a5568;
+            border-radius: 4px;
+            font-size: 12px;
+            font-family: 'Monaco', 'Consolas', monospace;
+            display: none;
+        }
+        
+        /* 底部状态栏 */
+        .footer {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 16px;
+            background-color: #1a1f2e;
+            border-top: 1px solid #2d3748;
+            height: 60px;
+            min-height: 60px;
+            flex-shrink: 0;
+            font-size: 13px;
+        }
+        
+        .stats {
+            display: flex;
+            gap: 20px;
+        }
+        
+        .stat-item {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        
+        .stat-label {
+            color: #a0aec0;
+            font-size: 11px;
+            margin-bottom: 2px;
+        }
+        
+        .stat-value {
+            font-weight: 600;
+            font-size: 14px;
+        }
+        
+        .up { color: #10b981; }
+        .down { color: #ef4444; }
+        .neutral { color: #a0aec0; }
+        .total { color: #3182ce; }
+        
+        /* 触摸指示器 */
+        .touch-indicator {
+            position: fixed;
+            width: 44px;
+            height: 44px;
+            background-color: rgba(49, 130, 206, 0.3);
+            border: 2px solid rgba(49, 130, 206, 0.7);
+            border-radius: 50%;
+            pointer-events: none;
+            z-index: 100;
+            display: none;
+        }
+        
+        /* 响应式调整 */
+        @media (max-width: 480px) {
+            .header h1 {
+                font-size: 16px;
+            }
+            
+            .btn {
+                padding: 8px 12px;
+                font-size: 13px;
+            }
+            
+            .footer {
+                flex-direction: column;
+                height: auto;
+                gap: 8px;
+                padding: 8px 16px;
+            }
+            
+            .stats {
+                width: 100%;
+                justify-content: space-between;
+            }
+        }
+        
+        @media (max-width: 360px) {
+            .header {
+                flex-direction: column;
+                gap: 8px;
+                height: auto;
+                padding: 8px 12px;
+            }
+            
+            .header h1 {
+                font-size: 15px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- 顶部工具条 -->
+    <div class="header">
+        <h1>移动端K线图</h1>
+        <div class="header-controls">
+            <button id="generateBtn" class="btn">生成数据</button>
+            <button id="resetBtn" class="btn">重置</button>
+            <button id="crosshairBtn" class="btn active">十字线:开</button>
+        </div>
+    </div>
+    
+    <!-- 中间画布区域 -->
+    <div class="chart-container">
+        <canvas id="klineCanvas"></canvas>
+        <div id="crosshairInfo" class="crosshair-info"></div>
+        <div id="priceInfo" class="price-info"></div>
+        <div id="timeInfo" class="time-info"></div>
+    </div>
+    
+    <!-- 底部状态栏 -->
+    <div class="footer">
+        <div class="stats">
+            <div class="stat-item">
+                <span class="stat-label">上涨</span>
+                <span id="upCount" class="stat-value up">0</span>
+            </div>
+            <div class="stat-item">
+                <span class="stat-label">下跌</span>
+                <span id="downCount" class="stat-value down">0</span>
+            </div>
+            <div class="stat-item">
+                <span class="stat-label">平盘</span>
+                <span id="neutralCount" class="stat-value neutral">0</span>
+            </div>
+            <div class="stat-item">
+                <span class="stat-label">总数据</span>
+                <span id="totalCount" class="stat-value total">0</span>
+            </div>
+        </div>
+    </div>
+    
+    <!-- 触摸指示器（调试用） -->
+    <div id="touchIndicator" class="touch-indicator"></div>
+    
+    <script>
+        // 主K线图类
+        class KLineChart {
+            constructor(canvasId) {
+                this.canvas = document.getElementById(canvasId);
+                this.ctx = this.canvas.getContext('2d');
+                
+                // 图表配置
+                this.config = {
+                    padding: { top: 30, right: 20, bottom: 60, left: 60 },
+                    gridColor: '#2d3748',
+                    axisColor: '#4a5568',
+                    axisTextColor: '#a0aec0',
+                    upColor: '#10b981',
+                    downColor: '#ef4444',
+                    crosshairColor: 'rgba(49, 130, 206, 0.5)',
+                    crosshairWidth: 1,
+                    candleWidth: 12,
+                    candleSpacing: 4,
+                    minCandleWidth: 6,
+                    maxCandleWidth: 20,
+                    gridLineWidth: 1,
+                    axisLineWidth: 1.5
+                };
+                
+                // 数据相关
+                this.klineData = [];
+                this.visibleData = [];
+                this.dataStartIndex = 0;
+                this.dataEndIndex = 0;
+                
+                // 视口和缩放
+                this.viewport = {
+                    x: 0,
+                    y: 0,
+                    scaleX: 1,
+                    scaleY: 1,
+                    offsetX: 0,
+                    offsetY: 0
+                };
+                
+                // 交互状态
+                this.isDragging = false;
+                this.isPinching = false;
+                this.showCrosshair = true;
+                this.lastTouchDistance = 0;
+                this.dragStartX = 0;
+                this.dragStartY = 0;
+                this.lastDragX = 0;
+                this.lastDragY = 0;
+                
+                // 十字线位置
+                this.crosshairX = -1;
+                this.crosshairY = -1;
+                this.hoverCandleIndex = -1;
+                
+                // 价格和时间范围
+                this.priceRange = { min: 0, max: 0 };
+                this.timeRange = { min: 0, max: 0 };
+                
+                // 初始化
+                this.init();
+            }
+            
+            init() {
+                this.resizeCanvas();
+                this.generateKlineData(100);
+                this.calculateVisibleData();
+                this.draw();
+                this.bindEvents();
+                this.updateStats();
+            }
+            
+            // 调整画布大小
+            resizeCanvas() {
+                const container = this.canvas.parentElement;
+                const dpr = window.devicePixelRatio || 1;
+                
+                this.canvas.width = container.clientWidth * dpr;
+                this.canvas.height = container.clientHeight * dpr;
+                
+                this.ctx.scale(dpr, dpr);
+                
+                this.canvas.style.width = container.clientWidth + 'px';
+                this.canvas.style.height = container.clientHeight + 'px';
+            }
+            
+            // 生成随机K线数据
+            generateKlineData(count) {
+                this.klineData = [];
+                let basePrice = 100 + Math.random() * 100;
+                const baseTime = Date.now() - count * 24 * 60 * 60 * 1000; // 24小时间隔
+                
+                for (let i = 0; i < count; i++) {
+                    const time = baseTime + i * 24 * 60 * 60 * 1000;
+                    const open = basePrice;
+                    const change = (Math.random() - 0.5) * 20;
+                    const close = open + change;
+                    const high = Math.max(open, close) + Math.random() * 10;
+                    const low = Math.min(open, close) - Math.random() * 10;
+                    const volume = Math.floor(Math.random() * 10000) + 1000;
+                    
+                    this.klineData.push({
+                        time,
+                        open,
+                        close,
+                        high,
+                        low,
+                        volume,
+                        isUp: close >= open
+                    });
+                    
+                    basePrice = close;
+                }
+                
+                this.dataStartIndex = 0;
+                this.dataEndIndex = this.klineData.length - 1;
+                this.calculatePriceRange();
+            }
+            
+            // 计算价格范围
+            calculatePriceRange() {
+                if (this.klineData.length === 0) return;
+                
+                let min = Infinity;
+                let max = -Infinity;
+                
+                for (let i = this.dataStartIndex; i <= this.dataEndIndex; i++) {
+                    const data = this.klineData[i];
+                    min = Math.min(min, data.low);
+                    max = Math.max(max, data.high);
+                }
+                
+                // 添加一些边距
+                const padding = (max - min) * 0.1;
+                this.priceRange = {
+                    min: min - padding,
+                    max: max + padding
+                };
+            }
+            
+            // 计算可见数据
+            calculateVisibleData() {
+                this.visibleData = [];
+                const canvasWidth = this.getChartWidth();
+                const candleWidth = this.config.candleWidth;
+                const spacing = this.config.candleSpacing;
+                const totalWidth = candleWidth + spacing;
+                
+                const visibleCount = Math.floor(canvasWidth / totalWidth);
+                this.dataStartIndex = Math.max(0, Math.floor(this.viewport.x));
+                this.dataEndIndex = Math.min(this.klineData.length - 1, this.dataStartIndex + visibleCount - 1);
+                
+                for (let i = this.dataStartIndex; i <= this.dataEndIndex; i++) {
+                    this.visibleData.push(this.klineData[i]);
+                }
+                
+                this.calculatePriceRange();
+            }
+            
+            // 获取图表绘制区域尺寸
+            getChartWidth() {
+                return this.canvas.width / (window.devicePixelRatio || 1) - this.config.padding.left - this.config.padding.right;
+            }
+            
+            getChartHeight() {
+                return this.canvas.height / (window.devicePixelRatio || 1) - this.config.padding.top - this.config.padding.bottom;
+            }
+            
+            // 数据坐标转屏幕坐标
+            dataXToScreenX(dataIndex) {
+                const chartWidth = this.getChartWidth();
+                const candleWidth = this.config.candleWidth;
+                const spacing = this.config.candleSpacing;
+                const totalWidth = candleWidth + spacing;
+                
+                return this.config.padding.left + (dataIndex - this.viewport.x) * totalWidth;
+            }
+            
+            dataYToScreenY(price) {
+                const chartHeight = this.getChartHeight();
+                const priceRange = this.priceRange.max - this.priceRange.min;
+                
+                if (priceRange === 0) return this.config.padding.top;
+                
+                return this.config.padding.top + chartHeight * (1 - (price - this.priceRange.min) / priceRange);
+            }
+            
+            // 屏幕坐标转数据坐标
+            screenXToDataX(screenX) {
+                const chartWidth = this.getChartWidth();
+                const candleWidth = this.config.candleWidth;
+                const spacing = this.config.candleSpacing;
+                const totalWidth = candleWidth + spacing;
+                
+                return this.viewport.x + (screenX - this.config.padding.left) / totalWidth;
+            }
+            
+            screenYToDataY(screenY) {
+                const chartHeight = this.getChartHeight();
+                const priceRange = this.priceRange.max - this.priceRange.min;
+                
+                if (chartHeight === 0) return this.priceRange.min;
+                
+                return this.priceRange.min + (1 - (screenY - this.config.padding.top) / chartHeight) * priceRange;
+            }
+            
+            // 绘制网格
+            drawGrid() {
+                const ctx = this.ctx;
+                const width = this.canvas.width / (window.devicePixelRatio || 1);
+                const height = this.canvas.height / (window.devicePixelRatio || 1);
+                const chartWidth = this.getChartWidth();
+                const chartHeight = this.getChartHeight();
+                const padding = this.config.padding;
+                
+                // 绘制网格背景
+                ctx.fillStyle = '#0f131f';
+                ctx.fillRect(0, 0, width, height);
+                
+                // 绘制网格线
+                ctx.strokeStyle = this.config.gridColor;
+                ctx.lineWidth = this.config.gridLineWidth;
+                
+                // 垂直网格线
+                const verticalLines = 8;
+                for (let i = 0; i <= verticalLines; i++) {
+                    const x = padding.left + (chartWidth * i) / verticalLines;
+                    ctx.beginPath();
+                    ctx.moveTo(x, padding.top);
+                    ctx.lineTo(x, height - padding.bottom);
+                    ctx.stroke();
+                }
+                
+                // 水平网格线
+                const horizontalLines = 6;
+                for (let i = 0; i <= horizontalLines; i++) {
+                    const y = padding.top + (chartHeight * i) / horizontalLines;
+                    ctx.beginPath();
+                    ctx.moveTo(padding.left, y);
+                    ctx.lineTo(width - padding.right, y);
+                    ctx.stroke();
+                }
+            }
+            
+            // 绘制坐标轴
+            drawAxes() {
+                const ctx = this.ctx;
+                const width = this.canvas.width / (window.devicePixelRatio || 1);
+                const height = this.canvas.height / (window.devicePixelRatio || 1);
+                const padding = this.config.padding;
+                const chartHeight = this.getChartHeight();
+                
+                // 绘制坐标轴
+                ctx.strokeStyle = this.config.axisColor;
+                ctx.lineWidth = this.config.axisLineWidth;
+                
+                // Y轴（价格轴）
+                ctx.beginPath();
+                ctx.moveTo(padding.left, padding.top);
+                ctx.lineTo(padding.left, height - padding.bottom);
+                ctx.stroke();
+                
+                // X轴（时间轴）
+                ctx.beginPath();
+                ctx.moveTo(padding.left, height - padding.bottom);
+                ctx.lineTo(width - padding.right, height - padding.bottom);
+                ctx.stroke();
+                
+                // 价格标签
+                ctx.fillStyle = this.config.axisTextColor;
+                ctx.font = '12px Arial';
+                ctx.textAlign = 'right';
+                ctx.textBaseline = 'middle';
+                
+                const priceLabels = 6;
+                for (let i = 0; i <= priceLabels; i++) {
+                    const price = this.priceRange.min + (this.priceRange.max - this.priceRange.min) * (1 - i / priceLabels);
+                    const y = padding.top + (chartHeight * i) / priceLabels;
+                    
+                    ctx.fillText(price.toFixed(2), padding.left - 8, y);
+                }
+                
+                // 时间标签
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'top';
+                
+                if (this.visibleData.length > 0) {
+                    const timeLabels = Math.min(8, this.visibleData.length);
+                    const step = Math.max(1, Math.floor(this.visibleData.length / timeLabels));
+                    
+                    for (let i = 0; i < this.visibleData.length; i += step) {
+                        if (i >= this.visibleData.length) break;
+                        
+                        const data = this.visibleData[i];
+                        const x = this.dataXToScreenX(this.dataStartIndex + i) + this.config.candleWidth / 2;
+                        
+                        if (x >= padding.left && x <= width - padding.right) {
+                            const date = new Date(data.time);
+                            const timeStr = `${date.getMonth() + 1}/${date.getDate()}`;
+                            ctx.fillText(timeStr, x, height - padding.bottom + 8);
+                        }
+                    }
+                }
+                
+                // 图表标题
+                ctx.fillStyle = '#ffffff';
+                ctx.font = 'bold 14px Arial';
+                ctx.textAlign = 'left';
+                ctx.textBaseline = 'top';
+                ctx.fillText('K线图', padding.left, 8);
+            }
+            
+            // 绘制K线
+            drawCandles() {
+                const ctx = this.ctx;
+                const candleWidth = this.config.candleWidth;
+                const halfCandleWidth = candleWidth / 2;
+                
+                for (let i = 0; i < this.visibleData.length; i++) {
+                    const data = this.visibleData[i];
+                    const dataIndex = this.dataStartIndex + i;
+                    
+                    const x = this.dataXToScreenX(dataIndex);
+                    const openY = this.dataYToScreenY(data.open);
+                    const closeY = this.dataYToScreenY(data.close);
+                    const highY = this.dataYToScreenY(data.high);
+                    const lowY = this.dataYToScreenY(data.low);
+                    
+                    const isUp = data.isUp;
+                    const color = isUp ? this.config.upColor : this.config.downColor;
+                    
+                    // 绘制影线
+                    ctx.strokeStyle = color;
+                    ctx.lineWidth = 1;
+                    ctx.beginPath();
+                    ctx.moveTo(x + halfCandleWidth, highY);
+                    ctx.lineTo(x + halfCandleWidth, lowY);
+                    ctx.stroke();
+                    
+                    // 绘制实体
+                    ctx.fillStyle = color;
+                    const candleTop = Math.min(openY, closeY);
+                    const candleHeight = Math.abs(closeY - openY);
+                    const minCandleHeight = 1;
+                    
+                    if (candleHeight > minCandleHeight) {
+                        ctx.fillRect(x, candleTop, candleWidth, candleHeight);
+                    } else {
+                        // 如果实体太小，画一条线
+                        ctx.beginPath();
+                        ctx.moveTo(x, candleTop);
+                        ctx.lineTo(x + candleWidth, candleTop);
+                        ctx.stroke();
+                    }
+                    
+                    // 如果是悬停的K线，添加高亮效果
+                    if (this.hoverCandleIndex === dataIndex) {
+                        ctx.strokeStyle = 'rgba(255, 255, 255, 0.6)';
+                        ctx.lineWidth = 2;
+                        ctx.strokeRect(x - 2, Math.min(highY, lowY) - 2, candleWidth + 4, Math.abs(highY - lowY) + 4);
+                    }
+                }
+            }
+            
+            // 绘制十字线
+            drawCrosshair() {
+                if (!this.showCrosshair || this.crosshairX < 0 || this.crosshairY < 0) return;
+                
+                const ctx = this.ctx;
+                const width = this.canvas.width / (window.devicePixelRatio || 1);
+                const height = this.canvas.height / (window.devicePixelRatio || 1);
+                const padding = this.config.padding;
+                
+                ctx.strokeStyle = this.config.crosshairColor;
+                ctx.lineWidth = this.config.crosshairWidth;
+                ctx.setLineDash([5, 5]);
+                
+                // 垂直线
+                if (this.crosshairX >= padding.left && this.crosshairX <= width - padding.right) {
+                    ctx.beginPath();
+                    ctx.moveTo(this.crosshairX, padding.top);
+                    ctx.lineTo(this.crosshairX, height - padding.bottom);
+                    ctx.stroke();
+                }
+                
+                // 水平线
+                if (this.crosshairY >= padding.top && this.crosshairY <= height - padding.bottom) {
+                    ctx.beginPath();
+                    ctx.moveTo(padding.left, this.crosshairY);
+                    ctx.lineTo(width - padding.right, this.crosshairY);
+                    ctx.stroke();
+                }
+                
+                ctx.setLineDash([]);
+                
+                // 更新坐标显示
+                this.updateCrosshairInfo();
+            }
+            
+            // 更新十字线信息显示
+            updateCrosshairInfo() {
+                const crosshairInfo = document.getElementById('crosshairInfo');
+                const priceInfo = document.getElementById('priceInfo');
+                const timeInfo = document.getElementById('timeInfo');
+                
+                if (this.crosshairX < 0 || this.crosshairY < 0 || 
+                    this.crosshairX > this.canvas.width / (window.devicePixelRatio || 1) ||
+                    this.crosshairY > this.canvas.height / (window.devicePixelRatio || 1)) {
+                    crosshairInfo.style.display = 'none';
+                    priceInfo.style.display = 'none';
+                    timeInfo.style.display = 'none';
+                    return;
+                }
+                
+                const price = this.screenYToDataY(this.crosshairY);
+                const dataIndex = Math.round(this.screenXToDataX(this.crosshairX));
+                
+                if (dataIndex >= 0 && dataIndex < this.klineData.length) {
+                    const data = this.klineData[dataIndex];
+                    const date = new Date(data.time);
+                    const timeStr = `${date.getFullYear()}/${date.getMonth() + 1}/${date.getDate()}`;
+                    
+                    crosshairInfo.style.left = (this.crosshairX + 20) + 'px';
+                    crosshairInfo.style.top = (this.crosshairY + 20) + 'px';
+                    crosshairInfo.style.display = 'block';
+                    crosshairInfo.innerHTML = `
+                        <div>时间: ${timeStr}</div>
+                        <div>开盘: ${data.open.toFixed(2)}</div>
+                        <div>收盘: ${data.close.toFixed(2)}</div>
+                        <div>最高: ${data.high.toFixed(2)}</div>
+                        <div>最低: ${data.low.toFixed(2)}</div>
+                        <div>成交量: ${data.volume.toLocaleString()}</div>
+                    `;
+                    
+                    priceInfo.style.left = (this.canvas.width / (window.devicePixelRatio || 1) - 100) + 'px';
+                    priceInfo.style.top = (this.crosshairY - 12) + 'px';
+                    priceInfo.style.display = 'block';
+                    priceInfo.textContent = price.toFixed(2);
+                    
+                    timeInfo.style.left = (this.crosshairX - 50) + 'px';
+                    timeInfo.style.top = (this.canvas.height / (window.devicePixelRatio || 1) - this.config.padding.bottom + 10) + 'px';
+                    timeInfo.style.display = 'block';
+                    timeInfo.textContent = timeStr;
+                } else {
+                    crosshairInfo.style.display = 'none';
+                    priceInfo.style.display = 'none';
+                    timeInfo.style.display = 'none';
+                }
+            }
+            
+            // 绘制所有内容
+            draw() {
+                this.drawGrid();
+                this.drawAxes();
+                this.drawCandles();
+                this.drawCrosshair();
+            }
+            
+            // 事件绑定
+            bindEvents() {
+                // 鼠标事件
+                this.canvas.addEventListener('mousemove', (e) => this.onMouseMove(e));
+                this.canvas.addEventListener('mouseleave', () => this.onMouseLeave());
+                this.canvas.addEventListener('mousedown', (e) => this.onMouseDown(e));
+                this.canvas.addEventListener('mouseup', () => this.onMouseUp());
+                this.canvas.addEventListener('wheel', (e) => this.onWheel(e));
+                
+                // 触摸事件
+                this.canvas.addEventListener('touchstart', (e) => this.onTouchStart(e), { passive: false });
+                this.canvas.addEventListener('touchmove', (e) => this.onTouchMove(e), { passive: false });
+                this.canvas.addEventListener('touchend', (e) => this.onTouchEnd(e));
+                
+                // 窗口大小调整
+                window.addEventListener('resize', () => {
+                    this.resizeCanvas();
+                    this.calculateVisibleData();
+                    this.draw();
+                });
+            }
+            
+            // 鼠标移动事件
+            onMouseMove(e) {
+                const rect = this.canvas.getBoundingClientRect();
+                this.crosshairX = e.clientX - rect.left;
+                this.crosshairY = e.clientY - rect.top;
+                
+                // 更新悬停的K线索引
+                const dataIndex = Math.round(this.screenXToDataX(this.crosshairX));
+                if (dataIndex >= 0 && dataIndex < this.klineData.length) {
+                    this.hoverCandleIndex = dataIndex;
+                } else {
+                    this.hoverCandleIndex = -1;
+                }
+                
+                // 如果是拖动状态
+                if (this.isDragging) {
+                    const deltaX = e.clientX - this.lastDragX;
+                    this.viewport.x -= deltaX / (this.config.candleWidth + this.config.candleSpacing);
+                    this.lastDragX = e.clientX;
+                    
+                    // 限制视口范围
+                    this.viewport.x = Math.max(0, Math.min(this.viewport.x, this.klineData.length - 1));
+                    this.calculateVisibleData();
+                }
+                
+                this.draw();
+            }
+            
+            onMouseLeave() {
+                this.crosshairX = -1;
+                this.crosshairY = -1;
+                this.hoverCandleIndex = -1;
+                this.draw();
+                
+                // 隐藏信息显示
+                document.getElementById('crosshairInfo').style.display = 'none';
+                document.getElementById('priceInfo').style.display = 'none';
+                document.getElementById('timeInfo').style.display = 'none';
+            }
+            
+            onMouseDown(e) {
+                this.isDragging = true;
+                this.lastDragX = e.clientX;
+                this.lastDragY = e.clientY;
+                this.canvas.style.cursor = 'grabbing';
+            }
+            
+            onMouseUp() {
+                this.isDragging = false;
+                this.canvas.style.cursor = 'crosshair';
+            }
+            
+            onWheel(e) {
+                e.preventDefault();
+                
+                const rect = this.canvas.getBoundingClientRect();
+                const mouseX = e.clientX - rect.left;
+                const dataX = this.screenXToDataX(mouseX);
+                
+                // 缩放
+                const zoomFactor = e.deltaY > 0 ? 0.9 : 1.1;
+                this.config.candleWidth *= zoomFactor;
+                this.config.candleWidth = Math.max(
+                    this.config.minCandleWidth,
+                    Math.min(this.config.candleWidth, this.config.maxCandleWidth)
+                );
+                
+                // 保持鼠标位置的数据点位置不变
+                const newDataX = this.screenXToDataX(mouseX);
+                this.viewport.x += dataX - newDataX;
+                
+                this.calculateVisibleData();
+                this.draw();
+            }
+            
+            // 触摸开始事件
+            onTouchStart(e) {
+                e.preventDefault();
+                
+                if (e.touches.length === 1) {
+                    // 单指触摸
+                    const touch = e.touches[0];
+                    this.isDragging = true;
+                    this.dragStartX = touch.clientX;
+                    this.dragStartY = touch.clientY;
+                    this.lastDragX = touch.clientX;
+                    this.lastDragY = touch.clientY;
+                    
+                    // 更新十字线位置
+                    const rect = this.canvas.getBoundingClientRect();
+                    this.crosshairX = touch.clientX - rect.left;
+                    this.crosshairY = touch.clientY - rect.top;
+                    
+                } else if (e.touches.length === 2) {
+                    // 双指触摸
+                    this.isPinching = true;
+                    this.isDragging = false;
+                    const touch1 = e.touches[0];
+                    const touch2 = e.touches[1];
+                    this.lastTouchDistance = Math.hypot(
+                        touch2.clientX - touch1.clientX,
+                        touch2.clientY - touch1.clientY
+                    );
+                }
+                
+                // 显示触摸指示器
+                if (e.touches.length === 1) {
+                    const indicator = document.getElementById('touchIndicator');
+                    indicator.style.left = (e.touches[0].clientX - 22) + 'px';
+                    indicator.style.top = (e.touches[0].clientY - 22) + 'px';
+                    indicator.style.display = 'block';
+                }
+            }
+            
+            // 触摸移动事件
+            onTouchMove(e) {
+                e.preventDefault();
+                
+                if (e.touches.length === 1 && this.isDragging) {
+                    // 单指拖动
+                    const touch = e.touches[0];
+                    const deltaX = touch.clientX - this.lastDragX;
+                    this.viewport.x -= deltaX / (this.config.candleWidth + this.config.candleSpacing);
+                    this.lastDragX = touch.clientX;
+                    
+                    // 限制视口范围
+                    this.viewport.x = Math.max(0, Math.min(this.viewport.x, this.klineData.length - 1));
+                    
+                    // 更新十字线位置
+                    const rect = this.canvas.getBoundingClientRect();
+                    this.crosshairX = touch.clientX - rect.left;
+                    this.crosshairY = touch.clientY - rect.top;
+                    
+                    this.calculateVisibleData();
+                    this.draw();
+                    
+                } else if (e.touches.length === 2 && this.isPinching) {
+                    // 双指捏合缩放
+                    const touch1 = e.touches[0];
+                    const touch2 = e.touches[1];
+                    const currentDistance = Math.hypot(
+                        touch2.clientX - touch1.clientX,
+                        touch2.clientY - touch1.clientY
+                    );
+                    
+                    if (this.lastTouchDistance > 0) {
+                        const zoomFactor = currentDistance / this.lastTouchDistance;
+                        this.config.candleWidth *= zoomFactor;
+                        this.config.candleWidth = Math.max(
+                            this.config.minCandleWidth,
+                            Math.min(this.config.candleWidth, this.config.maxCandleWidth)
+                        );
+                    }
+                    
+                    this.lastTouchDistance = currentDistance;
+                    this.calculateVisibleData();
+                    this.draw();
+                }
+                
+                // 更新触摸指示器
+                if (e.touches.length === 1) {
+                    const indicator = document.getElementById('touchIndicator');
+                    indicator.style.left = (e.touches[0].clientX - 22) + 'px';
+                    indicator.style.top = (e.touches[0].clientY - 22) + 'px';
+                }
+            }
+            
+            // 触摸结束事件
+            onTouchEnd(e) {
+                e.preventDefault();
+                
+                this.isDragging = false;
+                this.isPinching = false;
+                this.lastTouchDistance = 0;
+                
+                // 隐藏触摸指示器
+                document.getElementById('touchIndicator').style.display = 'none';
+                
+                // 如果没有触摸点了，隐藏十字线
+                if (e.touches.length === 0) {
+                    this.crosshairX = -1;
+                    this.crosshairY = -1;
+                    this.hoverCandleIndex = -1;
+                    
+                    document.getElementById('crosshairInfo').style.display = 'none';
+                    document.getElementById('priceInfo').style.display = 'none';
+                    document.getElementById('timeInfo').style.display = 'none';
+                    
+                    this.draw();
+                }
+            }
+            
+            // 重置视图
+            resetView() {
+                this.viewport.x = 0;
+                this.config.candleWidth = 12;
+                this.calculateVisibleData();
+                this.draw();
+            }
+            
+            // 生成新的K线数据
+            generateNewData(count) {
+                this.generateKlineData(count);
+                this.resetView();
+                this.updateStats();
+            }
+            
+            // 更新状态栏统计
+            updateStats() {
+                let upCount = 0;
+                let downCount = 0;
+                let neutralCount = 0;
+                
+                for (const data of this.klineData) {
+                    if (data.close > data.open) {
+                        upCount++;
+                    } else if (data.close < data.open) {
+                        downCount++;
+                    } else {
+                        neutralCount++;
+                    }
+                }
+                
+                document.getElementById('upCount').textContent = upCount;
+                document.getElementById('downCount').textContent = downCount;
+                document.getElementById('neutralCount').textContent = neutralCount;
+                document.getElementById('totalCount').textContent = this.klineData.length;
+            }
+            
+            // 切换十字线显示
+            toggleCrosshair() {
+                this.showCrosshair = !this.showCrosshair;
+                if (!this.showCrosshair) {
+                    this.crosshairX = -1;
+                    this.crosshairY = -1;
+                    document.getElementById('crosshairInfo').style.display = 'none';
+                    document.getElementById('priceInfo').style.display = 'none';
+                    document.getElementById('timeInfo').style.display = 'none';
+                }
+                this.draw();
+                return this.showCrosshair;
+            }
+        }
+        
+        // 页面加载完成后初始化
+        window.onload = function() {
+            const klineChart = new KLineChart('klineCanvas');
+            
+            // 绑定按钮事件
+            document.getElementById('generateBtn').addEventListener('click', function() {
+                klineChart.generateNewData(100);
+            });
+            
+            document.getElementById('resetBtn').addEventListener('click', function() {
+                klineChart.resetView();
+            });
+            
+            document.getElementById('crosshairBtn').addEventListener('click', function() {
+                const isOn = klineChart.toggleCrosshair();
+                this.textContent = '十字线:' + (isOn ? '开' : '关');
+                this.classList.toggle('active', isOn);
+            });
+            
+            // 防止页面滚动
+            document.addEventListener('touchmove', function(e) {
+                if (e.target.id === 'klineCanvas') {
+                    e.preventDefault();
+                }
+            }, { passive: false });
+            
+            // 初始绘制
+            klineChart.draw();
+        };
+    </script>
+</body>
+</html>
